@@ -1,10 +1,20 @@
 name: Post Discussion to GitHub
 
 on:
-  push:
-    paths:
-      - discussions/*  # Only trigger when files in the 'discussions/' folder are updated
-  workflow_dispatch: # Manual trigger if needed
+  workflow_dispatch:
+    inputs:
+      discussion_title:
+        description: 'Title of the discussion'
+        required: true
+        default: 'Default Title'
+      discussion_body:
+        description: 'Body of the discussion'
+        required: true
+        default: 'Default Body'
+      category_id:
+        description: 'Category ID for the discussion'
+        required: true
+        default: '<INSERT_DEFAULT_CATEGORY_ID>'
 
 jobs:
   post-discussion:
@@ -19,30 +29,29 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Read Discussion Content
-      id: read_content
+    - name: Get Repository ID
+      id: get_repo_id
       run: |
-        FILE_PATH="discussions/latest-discussion.md"
-        if [ -f "$FILE_PATH" ]; then
-          DISCUSSION_TITLE=$(head -n 1 "$FILE_PATH")
-          DISCUSSION_BODY=$(tail -n +2 "$FILE_PATH")
-          echo "DISCUSSION_TITLE=$DISCUSSION_TITLE" >> $GITHUB_ENV
-          echo "DISCUSSION_BODY=$DISCUSSION_BODY" >> $GITHUB_ENV
-        else
-          echo "No discussion content found. Exiting."
-          exit 1
+        REPO_ID=$(gh api graphql -F owner='${{ github.repository_owner }}' \
+          -F name='${{ github.event.repository.name }}' \
+          --raw-field query='
+            query ($owner: String!, $name: String!) {
+              repository(owner: $owner, name: $name) {
+                id
+              }
+            }' --jq '.data.repository.id')
+        echo "REPO_ID=$REPO_ID" >> $GITHUB_ENV
 
     - name: Post Discussion
       run: |
-        gh api graphql -F repositoryOwner='${{ github.repository_owner }}' \
-          -F repositoryName='${{ github.event.repository.name }}' \
-          -F title="${DISCUSSION_TITLE}" \
-          -F body="${DISCUSSION_BODY}" \
-          -F categoryId='<INSERT_CATEGORY_ID>' \
+        gh api graphql -F repositoryId="${REPO_ID}" \
+          -F title="${{ github.event.inputs.discussion_title }}" \
+          -F body="${{ github.event.inputs.discussion_body }}" \
+          -F categoryId="${{ github.event.inputs.category_id }}" \
           --raw-field query='
-            mutation ($repositoryOwner: String!, $repositoryName: String!, $title: String!, $body: String!, $categoryId: ID!) {
+            mutation ($repositoryId: ID!, $title: String!, $body: String!, $categoryId: ID!) {
               createDiscussion(input: {
-                repositoryId: $repositoryName
+                repositoryId: $repositoryId
                 categoryId: $categoryId
                 title: $title
                 body: $body
