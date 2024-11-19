@@ -1,0 +1,54 @@
+name: Post Discussion to GitHub
+
+on:
+  push:
+    paths:
+      - discussions/*  # Only trigger when files in the 'discussions/' folder are updated
+  workflow_dispatch: # Manual trigger if needed
+
+jobs:
+  post-discussion:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Set Up GitHub CLI
+      uses: actions/setup-gh@v2
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Read Discussion Content
+      id: read_content
+      run: |
+        FILE_PATH="discussions/latest-discussion.md"
+        if [ -f "$FILE_PATH" ]; then
+          DISCUSSION_TITLE=$(head -n 1 "$FILE_PATH")
+          DISCUSSION_BODY=$(tail -n +2 "$FILE_PATH")
+          echo "DISCUSSION_TITLE=$DISCUSSION_TITLE" >> $GITHUB_ENV
+          echo "DISCUSSION_BODY=$DISCUSSION_BODY" >> $GITHUB_ENV
+        else
+          echo "No discussion content found. Exiting."
+          exit 1
+
+    - name: Post Discussion
+      run: |
+        gh api graphql -F repositoryOwner='${{ github.repository_owner }}' \
+          -F repositoryName='${{ github.event.repository.name }}' \
+          -F title="${DISCUSSION_TITLE}" \
+          -F body="${DISCUSSION_BODY}" \
+          -F categoryId='<INSERT_CATEGORY_ID>' \
+          --raw-field query='
+            mutation ($repositoryOwner: String!, $repositoryName: String!, $title: String!, $body: String!, $categoryId: ID!) {
+              createDiscussion(input: {
+                repositoryId: $repositoryName
+                categoryId: $categoryId
+                title: $title
+                body: $body
+              }) {
+                discussion {
+                  url
+                }
+              }
+            }'
