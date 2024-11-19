@@ -1,0 +1,39 @@
+name: Send Slack Message
+
+on:
+  push:
+    paths:
+      - slack-messages/*  # Trigger when files in 'slack-messages/' are updated
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  send-slack-message:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Read Slack Message Content
+      id: read_content
+      run: |
+        FILE_PATH="slack-messages/latest-message.txt"
+        if [ -f "$FILE_PATH" ]; then
+          SLACK_MESSAGE=$(cat "$FILE_PATH")
+          echo "SLACK_MESSAGE=$SLACK_MESSAGE" >> $GITHUB_ENV
+        else
+          echo "No Slack message content found. Exiting."
+          exit 1
+
+    - name: Send Slack Message
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        if [ -z "$SLACK_MESSAGE" ]; then
+          echo "Slack message content is empty. Exiting."
+          exit 1
+        fi
+
+        curl -X POST -H 'Content-type: application/json' \
+          --data "{\"text\": \"$SLACK_MESSAGE\"}" \
+          "$SLACK_WEBHOOK_URL"
