@@ -1,3 +1,37 @@
+<!--
+Key Objectives:
+1. Update sections to include new functionalities introduced by `git_operations.py`, `diff_communicator.py`, `issue_analyzer.py`, and `opord_analysis.py`.
+2. Include examples and usage instructions for each of the new scripts to guide users.
+3. Revise installation instructions if there are any new dependencies or configuration steps.
+4. Provide clear documentation on how to run the new operations and integrate them into existing workflows.
+5. Maintain a consistent structure and readability throughout the updated document.
+
+```markdown
+# Review and Missing Components
+
+1. `src/main.py`:
+- Ensure command-line arguments and input methods are implemented to accept new parameters related to git operations and issue analysis.
+- Revise user interface prompts to include options for the new features.
+
+2. `tests/test_core_functions.py`:
+- Add test cases for the new functionalities in git_operations.py, issue_analyzer.py, and opord_analysis.py.
+- Implement mock objects to simulate git operations and issue fetching.
+
+3. `requirements.txt`:
+- Ensure all necessary dependencies are listed. Currently, only requests is included, which is correct for HTTP requests. 
+- Verify if any other libraries are used in the scripts.
+
+4. `src/agent_logic/core_functions.py`:
+- Ensure the integration of new functionalities is complete and coherent with the main execution flow.
+
+5. `build/Dockerfile`:
+- The Dockerfile is currently empty. It needs to be populated with instructions to build the Docker image for the agent.
+
+6. `build/docker-compose.yml`:
+Ensure the configuration aligns with the deployment requirements, such as environment variables and volume mappings.
+```
+-->
+
 # PR-CYBR-DOCUMENTATION-AGENT
 
 ## Overview
@@ -118,3 +152,22 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
 ---
 
 For more information, refer to the [PR-CYBR-DOCUMENTATION-AGENT Documentation](https://github.com/PR-CYBR/PR-CYBR-DOCUMENTATION-AGENT) or contact the PR-CYBR team.
+
+---
+
+## New Functionalities
+
+- **Git Operations**
+  - _Clone repositories and compare commits._
+
+- **Issue Analyzer**
+  - _Fetch and analyze open issues from repositories._
+
+- **OPORD Analysis**
+  - _Analyze OPORD documents and generate actionable tasks._
+
+## Usage
+
+- **Git Operations**: Use the `GitOperations` class to clone and compare repositories.
+- **Issue Analysis**: Use the `IssueAnalyzer` class to fetch and analyze issues.
+- **OPORD Analysis**: Use the `OpordAnalysis` class to analyze OPORD documents.

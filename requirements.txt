@@ -1,1 +1,6 @@
-# Add your Python dependencies here
+# HTTP requests library
+requests
+
+# Logging is part of the Python standard library, so no need to include it here
+
+# Add any other dependencies your project might require
