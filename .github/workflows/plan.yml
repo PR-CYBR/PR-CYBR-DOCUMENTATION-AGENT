@@ -1,0 +1,27 @@
+name: /plan – Codex Workflow
+on:
+  issue_comment:
+    types: [created]
+jobs:
+  codex:
+    if: contains(github.event.comment.body, '/plan')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Codex environment
+        run: |
+          echo "Initializing Codex environment..."
+      - name: Execute plan
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          echo "Plan command stub"
+          echo "${{ github.event.comment.body }}" > plan.txt
+          git checkout codex
+          echo "// generated output" > output.txt
+          git add output.txt
+          git commit -m "Codex plan output"
+          git push origin codex
