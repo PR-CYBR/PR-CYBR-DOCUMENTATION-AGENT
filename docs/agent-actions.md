@@ -25,6 +25,7 @@ Key Objectives for this Document:
 ### Environment Variables
 - Overview of `.env` file usage to securely manage sensitive variables.
 - Key environment variables required for workflows (e.g., `Assistant ID`, API keys).
+- Repository-level variables shared across workflows (for example `TF_CLOUD_ORGANIZATION`, `TF_WORKSPACE`, `TF_CONFIG_DIRECTORY`).
 
 ## Core CI/CD Workflows
 
@@ -81,11 +82,24 @@ jobs:
         run: echo "Deployment successful!"
 ```
 
+### Terraform Cloud Workflow Bridge (A-11)
+
+- **Purpose**: Ensure Terraform Cloud performs all plans and applies so secrets and provider credentials remain centralized in Terraform Cloud workspaces.
+- **Workflow file**: `.github/workflows/tfc-sync.yml` (Terraform Cloud Workflow Bridge).
+- **Triggers**:
+  - Pull requests targeting `main` upload configuration and start speculative plans.
+  - Pushes to integration branches (`codex`, `agents`) upload configuration and request apply runs.
+- **Required configuration**:
+  - Repository variables `TF_CLOUD_ORGANIZATION`, `TF_WORKSPACE`, and optional `TF_CONFIG_DIRECTORY` (defaults to the repository root when unset).
+  - GitHub Actions secret `TFC_WORKFLOW_TOKEN` generated from Terraform Cloud's workflow bridge token; GitHub stores only this trigger credential while Terraform Cloud retains all provider secrets.
+- **Feedback loop**: The workflow comments on pull requests with the Terraform plan summary and links directly to the Terraform Cloud run for review.
+- **Safety rails**: Auto-apply only proceeds when Terraform Cloud marks the run confirmable; otherwise maintainers approve the run inside Terraform Cloud.
+
 ## Best Practices
 
 	•	Use modular workflows for reusability across agents.
 	•	Implement caching to reduce build times.
-	•	Securely manage secrets using GitHub Actions Secrets.
+	•	Securely manage secrets using GitHub Actions Secrets and Terraform Cloud workspace variables.
 	•	Use versioned actions to ensure stability.
 
 ## Troubleshooting and Maintenance

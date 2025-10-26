@@ -98,6 +98,15 @@ To deploy the agent to a cloud environment:
 - The deployment workflow is defined in `.github/workflows/docker-compose.yml`.
 - Push changes to the `main` branch to trigger the deployment workflow automatically.
 
+3. **Terraform Cloud Workflow Bridge**
+
+- Configure repository **variables** under `Settings > Secrets and variables > Actions > Variables`:
+  - `TF_CLOUD_ORGANIZATION`
+  - `TF_WORKSPACE`
+  - (Optional) `TF_CONFIG_DIRECTORY` if Terraform configuration is stored outside the repository root.
+- Generate a Terraform Cloud workflow bridge token and store it as the Actions **secret** `TFC_WORKFLOW_TOKEN`.
+- The `.github/workflows/tfc-sync.yml` workflow uploads configuration, triggers speculative plans on pull requests, and requests apply runs on integration branch pushes while keeping provider credentials inside Terraform Cloud.
+
 3. **Manual Deployment**
 
 - Use the deployment script for manual deployment:

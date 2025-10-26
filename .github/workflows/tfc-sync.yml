@@ -1,42 +1,166 @@
-name: tfc-sync
+name: terraform-cloud-workflow-bridge
 
 on:
-  push:
-    branches:
-      - codex     # AI-driven commits (Codex Platform)
-      - agents    # Agent-driven inter-repo commits
   pull_request:
     branches:
-      - main      # All PRs targeting main branch (HITL control)
+      - main
+    paths:
+      - '**/*.tf'
+      - '.github/workflows/tfc-sync.yml'
+      - 'terraform/**'
+  push:
+    branches:
+      - codex
+      - agents
+    paths:
+      - '**/*.tf'
+      - '.github/workflows/tfc-sync.yml'
+      - 'terraform/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write   # Prepares for Terraform Cloud OIDC auth
+  pull-requests: write
+
+env:
+  TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
+  TF_WORKSPACE: ${{ vars.TF_WORKSPACE }}
+  CONFIG_DIRECTORY: ${{ vars.TF_CONFIG_DIRECTORY || '.' }}
+  TF_API_TOKEN: ${{ secrets.TFC_WORKFLOW_TOKEN }}
+
+concurrency:
+  group: terraform-cloud-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  terraform:
+  validate-secrets:
+    name: Validate workflow bridge configuration
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repo
+      - name: Check Terraform Cloud workspace variables
+        run: |
+          missing=""
+          [ -z "${TF_CLOUD_ORGANIZATION}" ] && missing="TF_CLOUD_ORGANIZATION"
+          [ -z "${TF_WORKSPACE}" ] && missing="${missing} TF_WORKSPACE"
+          [ -z "${TF_API_TOKEN}" ] && missing="${missing} TFC_WORKFLOW_TOKEN (Actions secret)"
+          if [ -n "${missing}" ]; then
+            echo "Missing required Terraform Cloud configuration:${missing}" >&2
+            exit 1
+          fi
+          echo "Terraform Cloud workflow bridge configuration detected."
+
+  speculative-plan:
+    name: Terraform Cloud speculative run
+    needs: validate-secrets
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Upload configuration to Terraform Cloud (speculative)
+        id: upload
+        uses: hashicorp/tfc-workflows-github/actions/upload-configuration@v1.3.2
         with:
-          token: ${{ secrets.AGENT_ACTIONS }}   # PAT stored in TFC
+          workspace: ${{ env.TF_WORKSPACE }}
+          directory: ${{ env.CONFIG_DIRECTORY }}
+          speculative: true
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Create speculative run
+        id: create
+        continue-on-error: true
+        uses: hashicorp/tfc-workflows-github/actions/create-run@v1.3.2
         with:
-          cli_config_credentials_token: ${{ secrets.TFC_TOKEN }}
+          workspace: ${{ env.TF_WORKSPACE }}
+          configuration_version: ${{ steps.upload.outputs.configuration_version_id }}
+          plan_only: true
+          message: >-
+            Speculative plan for PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}
 
-      # Initialize Terraform
-      - name: Terraform Init
-        run: terraform init
+      - name: Fetch plan output
+        id: plan
+        uses: hashicorp/tfc-workflows-github/actions/plan-output@v1.3.2
+        with:
+          plan: ${{ steps.create.outputs.plan_id }}
 
-      # Run plan for validation (always runs)
-      - name: Terraform Plan
-        run: terraform plan -input=false -no-color
+      - name: Upsert Terraform plan summary comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const runLink = `${{ toJson(steps.create.outputs.run_link) }}`.replace(/^"|"$/g, "");
+            const planSummary = `#### Terraform Cloud Speculative Plan\n` +
+              `\nPlan: ${{ steps.plan.outputs.add }} to add, ` +
+              `${{ steps.plan.outputs.change }} to change, ` +
+              `${{ steps.plan.outputs.destroy }} to destroy.` +
+              `\n[View run in Terraform Cloud](${runLink})`;
 
-      # Only apply if PR merged into main
-      - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve -input=false
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(comment =>
+              comment.user.type === 'Bot' && comment.body.includes('Terraform Cloud Speculative Plan')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: planSummary,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: planSummary,
+              });
+            }
+
+      - name: Fail on unsuccessful plan
+        if: ${{ steps.create.outputs.run_status != 'planned_and_finished' }}
+        run: |
+          echo "Terraform Cloud reported status: '${{ steps.create.outputs.run_status }}'" >&2
+          echo "Review the run for details: ${{ steps.create.outputs.run_link }}" >&2
+          exit 1
+
+  apply-run:
+    name: Terraform Cloud apply run
+    needs: validate-secrets
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Upload configuration to Terraform Cloud
+        id: upload
+        uses: hashicorp/tfc-workflows-github/actions/upload-configuration@v1.3.2
+        with:
+          workspace: ${{ env.TF_WORKSPACE }}
+          directory: ${{ env.CONFIG_DIRECTORY }}
+
+      - name: Create apply run
+        id: create
+        uses: hashicorp/tfc-workflows-github/actions/create-run@v1.3.2
+        with:
+          workspace: ${{ env.TF_WORKSPACE }}
+          configuration_version: ${{ steps.upload.outputs.configuration_version_id }}
+          message: >-
+            Apply run triggered from GitHub Actions workflow "${{ github.workflow }}" for commit ${{ github.sha }}
+
+      - name: Auto-apply run when confirmation required
+        if: ${{ fromJSON(steps.create.outputs.payload).data.attributes.actions.IsConfirmable }}
+        uses: hashicorp/tfc-workflows-github/actions/apply-run@v1.3.2
+        with:
+          run: ${{ steps.create.outputs.run_id }}
+          comment: >-
+            Apply run confirmed automatically by GitHub Actions run ${{ github.run_id }}
+
+      - name: Surface run link
+        run: |
+          echo "Terraform Cloud run URL: ${{ steps.create.outputs.run_link }}"
